@@ -86,7 +86,7 @@ def activate_device(activation_url):
     response_dict = json.loads(response.text)
     if response_dict["stat"] == "FAIL":
         raise Exception("Activation failed! Try a new QR/Activation URL")
-    print(response_dict)
+    # print(response_dict)
 
     hotp_secret = response_dict["response"]["hotp_secret"]
     return hotp_secret
@@ -98,8 +98,9 @@ def mknew(qr_url, output_path):
     activation_url = qr_url_to_activation_url(qr_url)
     hotp_secret = activate_device(activation_url)
 
-    encoded = hotp_secret[:-4]
-    qr = qrcode.make(f"otpauth://hotp/Duo?secret={encoded}&issuer=Duo&counter=1")
+    encoded = b32_encode(hotp_secret)[:-4]
+    url = f"otpauth://hotp/Duo?secret={encoded.decode()}&issuer=Duo&counter=1"
+    qr = qrcode.make(url)
     qr.save(output_path)
     print(f"Saved to {output_path}, go scan it from your app such as Google Authenticator!")
 
@@ -107,4 +108,4 @@ def mknew(qr_url, output_path):
 if __name__ == "__main__":
     args = docopt(__doc__)
 
-    mknew(args["<qr_url>", args["<output_path>"]])
+    mknew(args["<qr_url>"], args["<output_path>"])
