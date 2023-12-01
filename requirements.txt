@@ -1,4 +1,5 @@
 pyotp
 docopt
+qrcode
 requests
 pycryptodome

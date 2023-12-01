@@ -2,8 +2,7 @@
 """Duo HOTP
 
 Usage:
-    duo_hotp new <qr_url> [-s <secret.json>]
-    duo_hotp next [-s <secret.json>]
+    duo_hotp <qr_url> -o <output_path>
     duo_hotp -h | --help
 
 Options:
@@ -23,6 +22,7 @@ from Crypto.PublicKey import RSA
 from docopt import docopt
 from os.path import dirname, join, abspath, isfile
 from urllib import parse
+import qrcode
 
 
 def b32_encode(key):
@@ -92,112 +92,19 @@ def activate_device(activation_url):
     return hotp_secret
 
 
-class HOTP:
-    """read and write from json file to generate HMAC-based one time password
-    using pyotp
-
-    >>> if isfile('example.json'): os.unlink('example.json') # cleanup
-
-    HOTP can create and immedately use a secret
-    >>> hotp = HOTP('example.json', "7e1c0372fec015ac976765ef4bb5c3f3")
-    >>> isfile('example.json')
-    True
-    >>> hotp.count
-    0
-    >>> passcode = hotp.generate()
-    >>> hotp.count
-    1
-
-    But wont over write an existing file
-    >>> fail = HOTP('example.json', "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
-    Traceback (most recent call last):
-     ...
-    Exception: Not overwritting existing file
-
-    Instead, reload the last settings
-    >>> hotp_again = HOTP('example.json')
-    >>> hotp_again.count
-    1
-    """
-
-    def __init__(self, path, hotp_secret=None):
-        """load for secret file
-        or if given a secret, make the file
-        """
-        self.secret_file = path  # where to save
-        self.count = None  # number of hits on this secret
-        self.hotp_secret = None  # like "7e1c0372fec015ac976765ef4bb5c3f3"
-        self.pyhotp = None  # pyotp
-
-        # if we are initializing with a secret
-        # we should create a new file
-        if hotp_secret is not None:
-            self.init_secret(hotp_secret)
-
-        self.load_secret()
-
-    def init_secret(self, hotp_secret):
-        """create file with 0 counter"""
-        if isfile(self.secret_file):
-            print(f"'{self.secret_file}' already exits. not overwriting!")
-            print(f"MANUALLY EDIT: counter to 0 and htop to {hotp_secret}")
-            raise Exception("Not overwritting existing file")
-        self.hotp_secret = hotp_secret
-        self.count = 0
-        self.save_secret()
-
-    def save_secret(self):
-        """Save to secrets.json
-        hotp_secret should look like "7e1c0372fec015ac976765ef4bb5c3f3"
-        count should be an int"""
-        secrets = {"hotp_secret": self.hotp_secret, "count": self.count}
-        with open(self.secret_file, "w") as f:
-            json.dump(secrets, f)
-
-    def load_secret(self):
-        """sets self.pyhotp to a pyotp.HOTP object using secret.json"""
-        with open(self.secret_file, "r") as f:
-            secret_dict = json.load(f)
-
-        self.count = secret_dict.get("count", -1)
-        self.hotp_secret = secret_dict.get("hotp_secret", None)
-        if self.count < 0 or self.hotp_secret is None:
-            print("Missing values in '{self.secret_file}")
-            raise Exception("Bad input")
-
-        encoded_secret = b32_encode(self.hotp_secret)
-        self.pyhotp = pyotp.HOTP(encoded_secret)
-        return self.pyhotp
-
-    def generate(self):
-        "generate and update counter in secret_file"
-        passcode = self.pyhotp.at(self.count)
-        self.count += 1
-        self.save_secret()
-        return passcode
-
-
-def mknew(qr_url, secret_file):
+def mknew(qr_url, output_path):
     """load QR code, send activation request, generate first code"""
 
     activation_url = qr_url_to_activation_url(qr_url)
     hotp_secret = activate_device(activation_url)
-    print("HOTP Secret (B32):", b32_encode(hotp_secret))
 
-    hotp = HOTP(secret_file, hotp_secret)
-
-    print("first key")
-    print(hotp.generate())
+    encoded = hotp_secret[:-4]
+    qr = qrcode.make(f"otpauth://hotp/Duo?secret={encoded}&issuer=Duo&counter=1")
+    qr.save(output_path)
+    print(f"Saved to {output_path}, go scan it from your app such as Google Authenticator!")
 
 
 if __name__ == "__main__":
-    args = docopt(__doc__, version="Duo HOTP 2021.01")
+    args = docopt(__doc__)
 
-    if args["new"]:
-        secret_file = find_secret(args["-s"], must_exist=False)
-        mknew(args["<qr_url>"], secret_file)
-
-    elif args["next"]:
-        secret_file = find_secret(args["-s"])
-        hotp = HOTP(secret_file)
-        print(hotp.generate())
+    mknew(args["<qr_url>", args["<output_path>"]])
